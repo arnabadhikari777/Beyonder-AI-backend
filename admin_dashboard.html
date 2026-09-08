@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Admin Dashboard — Beyonder AI</title>
+<style>
+    body {
+        background: #0d1117;
+        color: #e6e6e6;
+        font-family: 'Segoe UI', sans-serif;
+        margin: 0;
+        padding: 30px;
+    }
+    h1 { display: flex; align-items: center; gap: 10px; }
+    h2 { margin-top: 40px; }
+    .logout {
+        float: right;
+        color: #f87171;
+        text-decoration: none;
+    }
+    .stats {
+        display: flex;
+        gap: 20px;
+        margin: 20px 0 40px;
+        flex-wrap: wrap;
+    }
+    .card {
+        background: #161b22;
+        padding: 20px 30px;
+        border-radius: 10px;
+        text-align: center;
+        min-width: 140px;
+    }
+    .card .num { font-size: 28px; font-weight: bold; }
+    .card .num.online { color: #4ade80; }
+    .card .label { color: #8b949e; font-size: 14px; }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 40px;
+        background: #161b22;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    th, td {
+        padding: 12px 16px;
+        text-align: left;
+        border-bottom: 1px solid #30363d;
+    }
+    th {
+        color: #8b949e;
+        font-size: 13px;
+        text-transform: uppercase;
+    }
+    .success { color: #4ade80; background: #14331f; padding: 3px 10px; border-radius: 10px; font-size: 12px; }
+    .failed { color: #f87171; background: #331414; padding: 3px 10px; border-radius: 10px; font-size: 12px; }
+    .badge-online { color: #4ade80; background: #14331f; padding: 3px 10px; border-radius: 10px; font-size: 12px; }
+    .badge-admin { color: #a78bfa; background: #241a33; padding: 2px 8px; border-radius: 8px; font-size: 11px; }
+    .badge-ai { color: #60a5fa; background: #142033; padding: 2px 8px; border-radius: 8px; font-size: 11px; }
+    .del-btn {
+        background: #b91c1c;
+        border: none;
+        color: white;
+        padding: 6px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+    .btn {
+        background: linear-gradient(90deg, #6366f1, #06b6d4);
+        border: none;
+        color: white;
+        padding: 6px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+    }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+    .empty { color: #8b949e; padding: 16px; }
+
+    /* ---- Live chat viewer panel ---- */
+    #live-panel {
+        display: none;
+        background: #161b22;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 40px;
+    }
+    #live-panel.open { display: block; }
+    #live-panel .live-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+    #live-panel .live-header h3 { margin: 0; }
+    #live-chat-log {
+        max-height: 420px;
+        overflow-y: auto;
+        background: #0d1117;
+        border-radius: 8px;
+        padding: 14px;
+        margin-bottom: 14px;
+    }
+    .live-msg {
+        margin-bottom: 12px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        max-width: 80%;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+    .live-msg.user { background: #21262d; margin-left: auto; }
+    .live-msg.ai { background: #14203a; }
+    .live-msg.admin { background: #241a33; border: 1px solid #6d28d9; }
+    .live-msg .meta { font-size: 11px; color: #8b949e; margin-bottom: 4px; }
+    .compose-row { display: flex; gap: 10px; }
+    .compose-row textarea {
+        flex: 1;
+        min-height: 60px;
+        border-radius: 8px;
+        border: 1px solid #30363d;
+        background: #0d1117;
+        color: #e6e6e6;
+        padding: 10px;
+        font-family: inherit;
+        resize: vertical;
+    }
+    .send-status { font-size: 12px; margin-top: 6px; color: #8b949e; }
+</style>
+</head>
+<body>
+    <a href="/admin/logout" class="logout">Logout</a>
+    <h1>👤 Admin Dashboard</h1>
+
+    <div class="stats">
+        <div class="card">
+            <div class="num">{{ users|length }}</div>
+            <div class="label">Total Users</div>
+        </div>
+        <div class="card">
+            <div class="num online" id="online-count">{{ online_count }}</div>
+            <div class="label">Online Now</div>
+        </div>
+        <div class="card">
+            <div class="num">{{ chats|length }}</div>
+            <div class="label">Chat Messages (recent)</div>
+        </div>
+        <div class="card">
+            <div class="num">{{ logs|length }}</div>
+            <div class="label">Login Attempts (recent)</div>
+        </div>
+    </div>
+
+    <!-- ================= ONLINE USERS (auto-refreshing) ================= -->
+    <h2>🟢 Online Users</h2>
+    <table id="online-table">
+        <tr><th>Name</th><th>Email</th><th>Last active</th><th></th></tr>
+        <tr><td colspan="4" class="empty">Loading…</td></tr>
+    </table>
+
+    <!-- ================= LIVE CHAT + MESSAGE INJECTION PANEL ================= -->
+    <div id="live-panel">
+        <div class="live-header">
+            <h3 id="live-panel-title">Live chat</h3>
+            <button class="btn" onclick="closeLivePanel()">Close</button>
+        </div>
+        <div id="live-chat-log"></div>
+        <div class="compose-row">
+            <textarea id="admin-message-input" placeholder="Type a message to send directly into this user's chat…"></textarea>
+            <button class="btn" id="send-message-btn" onclick="sendAdminMessage()">Send</button>
+        </div>
+        <div class="send-status" id="send-status"></div>
+    </div>
+
+    <h2>Registered Users</h2>
+    {% if users %}
+    <table>
+        <tr><th>Name</th><th>Email</th><th>Created</th><th>Last Login</th><th></th></tr>
+        {% for u in users %}
+        <tr>
+            <td>{{ u.name }}</td>
+            <td>{{ u.email }}</td>
+            <td>{{ u.created_at|datetimeformat }}</td>
+            <td>{{ u.last_login_at|datetimeformat if u.last_login_at else "-" }}</td>
+            <td style="display:flex; gap:8px;">
+                <button class="btn" onclick="openLivePanel('{{ u.email }}', '{{ u.name }}')">View Chat</button>
+                <form method="POST" action="/admin/delete-user" style="margin:0;" onsubmit="return confirm('Delete this user and all their chat history?');">
+                    <input type="hidden" name="email" value="{{ u.email }}">
+                    <button class="del-btn" type="submit">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty">No users yet.</div>
+    {% endif %}
+
+    <h2>Chat History (all users, most recent 500)</h2>
+    {% if chats %}
+    <table>
+        <tr><th>Email</th><th>User Message</th><th>Response</th><th>Source</th><th>Time</th></tr>
+        {% for c in chats %}
+        <tr>
+            <td>{{ c.user_email }}</td>
+            <td>{{ c.user_message }}</td>
+            <td>{{ c.ai_response }}</td>
+            <td>
+                {% if c.source == 'admin' %}
+                <span class="badge-admin">Admin</span>
+                {% else %}
+                <span class="badge-ai">AI</span>
+                {% endif %}
+            </td>
+            <td>{{ c.timestamp|datetimeformat }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty">No chat history yet.</div>
+    {% endif %}
+
+    <h2>Login Attempts</h2>
+    {% if logs %}
+    <table>
+        <tr><th>Email</th><th>IP</th><th>Time</th><th>Status</th></tr>
+        {% for l in logs %}
+        <tr>
+            <td>{{ l.user_email }}</td>
+            <td>{{ l.ip_address }}</td>
+            <td>{{ l.timestamp|datetimeformat }}</td>
+            <td>
+                {% if l.success %}
+                <span class="success">Success</span>
+                {% else %}
+                <span class="failed">Failed</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty">No login attempts logged yet.</div>
+    {% endif %}
+
+    <script>
+        // ==========================================================
+        // Online users: polled every few seconds so the count/table
+        // stay live without a manual page refresh.
+        // ==========================================================
+        const ONLINE_POLL_MS = 5000;
+        const LIVE_CHAT_POLL_MS = 3000;
+
+        let currentLiveEmail = null;
+        let liveChatPollTimer = null;
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str ?? '';
+            return div.innerHTML;
+        }
+
+        function formatTimeAgo(ts) {
+            const seconds = Math.max(0, (Date.now() / 1000) - ts);
+            if (seconds < 60) return 'just now';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}m ago`;
+            const hours = Math.floor(minutes / 60);
+            return `${hours}h ago`;
+        }
+
+        async function refreshOnlineUsers() {
+            try {
+                const res = await fetch('/admin/api/online-users');
+                if (!res.ok) return;
+                const data = await res.json();
+                document.getElementById('online-count').textContent = data.count;
+
+                const table = document.getElementById('online-table');
+                if (!data.online_users.length) {
+                    table.innerHTML = '<tr><th>Name</th><th>Email</th><th>Last active</th><th></th></tr>' +
+                        '<tr><td colspan="4" class="empty">No one is online right now.</td></tr>';
+                    return;
+                }
+
+                let rows = '<tr><th>Name</th><th>Email</th><th>Last active</th><th></th></tr>';
+                data.online_users.forEach(u => {
+                    rows += `<tr>
+                        <td>${escapeHtml(u.name)}</td>
+                        <td>${escapeHtml(u.email)} <span class="badge-online">online</span></td>
+                        <td>${formatTimeAgo(u.last_seen)}</td>
+                        <td><button class="btn" onclick="openLivePanel('${escapeHtml(u.email)}', '${escapeHtml(u.name)}')">View Chat</button></td>
+                    </tr>`;
+                });
+                table.innerHTML = rows;
+            } catch (e) {
+                console.error('Failed to refresh online users:', e);
+            }
+        }
+
+        // ==========================================================
+        // Live chat viewer + admin message injection
+        // ==========================================================
+        function openLivePanel(email, name) {
+            currentLiveEmail = email;
+            document.getElementById('live-panel-title').textContent = `Live chat — ${name} (${email})`;
+            document.getElementById('live-panel').classList.add('open');
+            document.getElementById('send-status').textContent = '';
+            refreshLiveChat();
+            if (liveChatPollTimer) clearInterval(liveChatPollTimer);
+            liveChatPollTimer = setInterval(refreshLiveChat, LIVE_CHAT_POLL_MS);
+            document.getElementById('live-panel').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function closeLivePanel() {
+            currentLiveEmail = null;
+            document.getElementById('live-panel').classList.remove('open');
+            if (liveChatPollTimer) clearInterval(liveChatPollTimer);
+        }
+
+        async function refreshLiveChat() {
+            if (!currentLiveEmail) return;
+            try {
+                const res = await fetch(`/admin/api/user-chats/${encodeURIComponent(currentLiveEmail)}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                const log = document.getElementById('live-chat-log');
+                const wasScrolledToBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+
+                log.innerHTML = data.chats.map(c => {
+                    if (c.source === 'admin') {
+                        return `<div class="live-msg admin">
+                            <div class="meta">Admin message · ${new Date(c.timestamp * 1000).toLocaleString()}</div>
+                            ${escapeHtml(c.ai_response)}
+                        </div>`;
+                    }
+                    return `
+                        <div class="live-msg user">
+                            <div class="meta">User · ${new Date(c.timestamp * 1000).toLocaleString()}</div>
+                            ${escapeHtml(c.user_message)}
+                        </div>
+                        <div class="live-msg ai">
+                            <div class="meta">Beyonder AI</div>
+                            ${escapeHtml(c.ai_response)}
+                        </div>`;
+                }).join('');
+
+                if (wasScrolledToBottom) {
+                    log.scrollTop = log.scrollHeight;
+                }
+            } catch (e) {
+                console.error('Failed to refresh live chat:', e);
+            }
+        }
+
+        async function sendAdminMessage() {
+            if (!currentLiveEmail) return;
+            const input = document.getElementById('admin-message-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            const btn = document.getElementById('send-message-btn');
+            const status = document.getElementById('send-status');
+            btn.disabled = true;
+            status.textContent = 'Sending…';
+
+            try {
+                const res = await fetch('/admin/api/send-message', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: currentLiveEmail, message })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    input.value = '';
+                    status.textContent = 'Delivered to the user\'s chat.';
+                    refreshLiveChat();
+                } else {
+                    status.textContent = data.message || 'Failed to send.';
+                }
+            } catch (e) {
+                status.textContent = 'Network error — please try again.';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        refreshOnlineUsers();
+        setInterval(refreshOnlineUsers, ONLINE_POLL_MS);
+    </script>
+</body>
+</html>
